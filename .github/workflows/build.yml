@@ -31,12 +31,29 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0"
+          fi
+          # Convert version like 1.2.3 to versionCode: 1*10000 + 2*100 + 3 = 10203
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          CODE=$(( ${major:-0} * 10000 + ${minor:-0} * 100 + ${patch:-0} ))
+          echo "version_name=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$CODE" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION (code: $CODE)"
+
       - name: Build Release APK
         env:
           KEYSTORE_PATH: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: |
           ./gradlew assembleRelease --no-daemon
 
