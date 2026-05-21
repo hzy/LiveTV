@@ -74,7 +74,7 @@ fun ChannelInfoOverlay(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(min = 400.dp)
+                .widthIn(max = 360.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(
                     brush = Brush.linearGradient(
@@ -128,8 +128,9 @@ fun ChannelInfoOverlay(
                 Spacer(modifier = Modifier.height(12.dp))
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .align(Alignment.CenterHorizontally)
                         .height(1.dp)
+                        .fillMaxWidth()
                         .background(Color(0x14FFFFFF))
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -137,8 +138,8 @@ fun ChannelInfoOverlay(
                     text = "按 [确认] 切换  ·  [↑↓] 继续选台",
                     fontSize = 12.sp,
                     color = Color(0x59FFFFFF),
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
             }
         }
