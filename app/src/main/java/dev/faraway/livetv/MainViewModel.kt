@@ -88,7 +88,12 @@ class MainViewModel : ViewModel() {
     fun confirmSwitch(): String? {
         if (isChannelInfoVisible && targetChannelIndex != currentChannelIndex) {
             currentChannelIndex = targetChannelIndex
-            hideChannelInfo()
+            // Delay hiding so user can see the switch confirmed
+            hideJob?.cancel()
+            hideJob = viewModelScope.launch {
+                delay(800)
+                isChannelInfoVisible = false
+            }
             return currentChannel.url
         }
         return null
@@ -185,11 +190,7 @@ class MainViewModel : ViewModel() {
         val realIndex = channels.indexOfFirst { it.id == selected.id }
         currentChannelIndex = realIndex
         targetChannelIndex = realIndex
-        // Delay closing so user can see the switch
-        viewModelScope.launch {
-            delay(800)
-            isChannelListOpen = false
-        }
+        isChannelListOpen = false
         return selected.url
     }
 }
