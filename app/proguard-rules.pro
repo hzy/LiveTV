@@ -1,9 +1,3 @@
-# VLC - keep all native + JNI related
--keep class org.videolan.** { *; }
--dontwarn org.videolan.**
--keep class org.videolan.libvlc.** { *; }
--keep class org.videolan.libvlc.interfaces.** { *; }
-
 # Keep native methods
 -keepclasseswithmembernames class * {
     native <methods>;
@@ -23,3 +17,7 @@
 # AndroidX
 -keep class androidx.lifecycle.** { *; }
 -keep class androidx.activity.** { *; }
+
+# Media3 / ExoPlayer
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
