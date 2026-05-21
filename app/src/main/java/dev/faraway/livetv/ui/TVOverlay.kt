@@ -1,6 +1,8 @@
 package dev.faraway.livetv.ui
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -14,14 +16,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.faraway.livetv.Channel
 import dev.faraway.livetv.MainViewModel
-import kotlinx.coroutines.launch
 
 // Theme colors
 private val AccentColor = Color(0xFF4FC3F7)
@@ -29,6 +32,10 @@ private val PanelBg = Color(0xF7101018)
 private val CardBg = Color(0xEB1E1E28)
 private val SubtleText = Color(0x66FFFFFF)
 private val DimText = Color(0x99FFFFFF)
+private val ItemShape = RoundedCornerShape(10.dp)
+private val FocusBorderColor = AccentColor.copy(alpha = 0.6f)
+private val LogoShape = RoundedCornerShape(8.dp)
+private val LogoBg = Color(0x14FFFFFF)
 
 /**
  * All overlay UI: channel info popup + channel list panel.
@@ -160,30 +167,30 @@ fun ChannelListPanel(
     currentChannelId: Int
 ) {
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
-    // Auto-scroll to focused item
     LaunchedEffect(focusIndex) {
         if (visible && channels.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.animateScrollToItem(focusIndex.coerceIn(0, channels.size - 1))
-            }
+            listState.scrollToItem(focusIndex.coerceIn(0, channels.size - 1))
         }
     }
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInHorizontally { -it },
-        exit = slideOutHorizontally { -it }
-    ) {
+    val offsetX by animateFloatAsState(
+        targetValue = if (visible) 0f else -1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "panelOffset"
+    )
+
+    if (offsetX > -1f) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(420.dp)
+                .graphicsLayer {
+                    translationX = offsetX * size.width
+                }
                 .background(PanelBg)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
                 Column(
                     modifier = Modifier
                         .padding(24.dp)
@@ -203,7 +210,6 @@ fun ChannelListPanel(
                     )
                 }
 
-                // Category tabs
                 FlowRow(
                     modifier = Modifier
                         .padding(horizontal = 24.dp, vertical = 8.dp),
@@ -236,7 +242,6 @@ fun ChannelListPanel(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Divider
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -244,14 +249,13 @@ fun ChannelListPanel(
                         .background(Color(0x0FFFFFFF))
                 )
 
-                // Channel list
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    itemsIndexed(channels) { index, channel ->
+                    itemsIndexed(channels, key = { _, ch -> ch.id }) { index, channel ->
                         ChannelListItem(
                             channel = channel,
                             isFocused = index == focusIndex,
@@ -273,26 +277,27 @@ fun ChannelListItem(
     isFocused: Boolean,
     isActive: Boolean
 ) {
+    val bgColor = when {
+        isFocused -> Color(0x1A4FC3F7)
+        isActive -> Color(0x264FC3F7)
+        else -> Color.Transparent
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                when {
-                    isFocused -> Color(0x1A4FC3F7)
-                    isActive -> Color(0x264FC3F7)
-                    else -> Color.Transparent
-                }
-            )
+            .clip(ItemShape)
+            .drawBehind {
+                drawRoundRect(color = bgColor, cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()))
+            }
             .then(
-                if (isFocused) Modifier.border(2.dp, AccentColor.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                if (isFocused) Modifier.border(2.dp, FocusBorderColor, ItemShape)
                 else Modifier
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Channel number
         Text(
             text = channel.number,
             fontSize = 16.sp,
@@ -303,12 +308,11 @@ fun ChannelListItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Channel logo placeholder
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0x14FFFFFF)),
+                .clip(LogoShape)
+                .background(LogoBg),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -321,7 +325,6 @@ fun ChannelListItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Channel info
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = channel.name,
@@ -339,7 +342,6 @@ fun ChannelListItem(
             }
         }
 
-        // Playing indicator
         if (isActive) {
             Box(
                 modifier = Modifier
