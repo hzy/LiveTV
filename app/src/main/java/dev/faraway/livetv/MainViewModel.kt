@@ -185,7 +185,11 @@ class MainViewModel : ViewModel() {
         val realIndex = channels.indexOfFirst { it.id == selected.id }
         currentChannelIndex = realIndex
         targetChannelIndex = realIndex
-        isChannelListOpen = false
+        // Delay closing so user can see the switch
+        viewModelScope.launch {
+            delay(800)
+            isChannelListOpen = false
+        }
         return selected.url
     }
 }
