@@ -76,9 +76,9 @@ jobs:
           # Rename with version + arch for release
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            RELEASE_APK="app/build/outputs/apk/release/LiveTV-${VERSION}-arm64.apk"
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV-${VERSION}-arm64-v8a.apk"
           else
-            RELEASE_APK="app/build/outputs/apk/release/LiveTV-arm64.apk"
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV-arm64-v8a.apk"
           fi
           cp "$APK_PATH" "$RELEASE_APK"
           echo "release_apk=$RELEASE_APK" >> $GITHUB_OUTPUT
