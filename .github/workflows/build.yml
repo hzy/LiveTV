@@ -44,6 +44,8 @@ jobs:
           # Convert version like 1.2.3 to versionCode: 1*10000 + 2*100 + 3 = 10203
           IFS='.' read -r major minor patch <<< "$VERSION"
           CODE=$(( ${major:-0} * 10000 + ${minor:-0} * 100 + ${patch:-0} ))
+          # versionCode must be >= 1
+          if [ "$CODE" -lt 1 ]; then CODE=1; fi
           echo "version_name=$VERSION" >> $GITHUB_OUTPUT
           echo "version_code=$CODE" >> $GITHUB_OUTPUT
           echo "📦 Version: $VERSION (code: $CODE)"
