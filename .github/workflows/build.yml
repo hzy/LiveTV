@@ -40,22 +40,38 @@ jobs:
         run: |
           ./gradlew assembleRelease --no-daemon
 
-      - name: Find APK
-        id: find_apk
+      - name: Prepare APK
+        id: apk
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*arm64*release*.apk" | head -1)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: No APK found!"
+            exit 1
+          fi
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "Found APK: $APK_PATH"
+          echo "✅ Found APK: $APK_PATH ($APK_SIZE)"
+
+          # Rename with version for release
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV-${VERSION}.apk"
+          else
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV.apk"
+          fi
+          cp "$APK_PATH" "$RELEASE_APK"
+          echo "release_apk=$RELEASE_APK" >> $GITHUB_OUTPUT
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LiveTV-release-arm64
-          path: ${{ steps.find_apk.outputs.apk_path }}
+          name: LiveTV-release
+          path: ${{ steps.apk.outputs.release_apk }}
+          compression-level: 0  # APK is already compressed, skip re-compression
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.find_apk.outputs.apk_path }}
+          files: ${{ steps.apk.outputs.release_apk }}
           generate_release_notes: true
