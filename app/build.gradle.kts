@@ -78,8 +78,12 @@ dependencies {
     implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
     implementation("androidx.tv:tv-material:1.0.0")
 
-    // VLC - libvlc for Android (supports RTP multicast + HDR)
-    implementation("org.videolan.android:libvlc-all:3.6.0")
+    // Media3 ExoPlayer (HWC overlay path on TVs, lower latency than VLC)
+    val media3 = "1.4.1"
+    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-datasource:$media3")
+    implementation("androidx.media3:media3-extractor:$media3")
+    implementation("androidx.media3:media3-common:$media3")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

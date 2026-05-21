@@ -30,22 +30,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private val viewModel: MainViewModel by viewModels()
-    private var vlcPlayer: VlcPlayer? = null
+    private var player: ExoPlayerImpl? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Allow drawing edge-to-edge, ignoring all system insets
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // Fullscreen immersive
         try {
             val controller = window.decorView.windowInsetsController
             if (controller != null) {
                 controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
                 controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-            // Draw into cutout area
             window.attributes.layoutInDisplayCutoutMode =
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         } catch (e: Exception) {
@@ -74,7 +71,7 @@ class MainActivity : ComponentActivity() {
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                     val url = viewModel.selectFromList()
-                    vlcPlayer?.play(url)
+                    player?.play(url)
                     true
                 }
                 KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
@@ -93,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                     val url = viewModel.confirmSwitch()
                     if (url != null) {
-                        vlcPlayer?.play(url)
+                        player?.play(url)
                     } else {
                         viewModel.showCurrentChannelInfo()
                     }
@@ -114,19 +111,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun setVlcPlayer(player: VlcPlayer) {
-        this.vlcPlayer = player
+    fun setActivePlayer(player: ExoPlayerImpl?) {
+        this.player = player
     }
 
     override fun onStop() {
         super.onStop()
-        vlcPlayer?.stop()
+        player?.stop()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        vlcPlayer?.release()
-        vlcPlayer = null
+        player?.release()
+        player = null
     }
 }
 
@@ -135,27 +132,20 @@ fun LiveTVApp(viewModel: MainViewModel) {
     val context = LocalContext.current
     val activity = context as MainActivity
 
-    // Create VLC player - wrapped in try/catch for safety
-    val vlcPlayer = remember {
+    val player = remember {
         try {
-            VlcPlayer(context).also {
-                activity.setVlcPlayer(it)
-            }
+            ExoPlayerImpl(context).also { activity.setActivePlayer(it) }
         } catch (e: Exception) {
-            Log.e("LiveTVApp", "Failed to create VLC player", e)
+            Log.e("LiveTVApp", "Failed to create player", e)
             null
         }
     }
 
-    // Cleanup on dispose
-    DisposableEffect(Unit) {
-        onDispose {
-            vlcPlayer?.release()
-        }
+    DisposableEffect(player) {
+        onDispose { player?.release() }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // VLC SurfaceView
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -168,19 +158,17 @@ fun LiveTVApp(viewModel: MainViewModel) {
                         holder.addCallback(object : SurfaceHolder.Callback {
                             override fun surfaceCreated(holder: SurfaceHolder) {
                                 Log.d("LiveTVApp", "Surface created")
-                                // Delay slightly to ensure surface is fully ready
                                 this@apply.post {
-                                    vlcPlayer?.attachSurface(this@apply)
-                                    vlcPlayer?.play(viewModel.currentChannel.url)
+                                    player?.attachSurface(this@apply)
+                                    player?.play(viewModel.currentChannel.url)
                                 }
                             }
                             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                                 Log.d("LiveTVApp", "Surface changed: ${width}x${height}")
-                                vlcPlayer?.updateVideoSize(width, height)
                             }
                             override fun surfaceDestroyed(holder: SurfaceHolder) {
                                 Log.d("LiveTVApp", "Surface destroyed")
-                                vlcPlayer?.detachSurface()
+                                player?.detachSurface()
                             }
                         })
                     }
@@ -189,7 +177,6 @@ fun LiveTVApp(viewModel: MainViewModel) {
             }
         )
 
-        // UI Overlays
         TVOverlay(viewModel = viewModel)
     }
 }
