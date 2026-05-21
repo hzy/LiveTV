@@ -108,6 +108,15 @@ class MainViewModel : ViewModel() {
     }
 
     /**
+     * Show current channel info (when pressing OK with no pending switch).
+     */
+    fun showCurrentChannelInfo() {
+        if (!isChannelInfoVisible) {
+            showChannelInfo()
+        }
+    }
+
+    /**
      * Show channel info overlay and start auto-hide timer.
      */
     private fun showChannelInfo() {

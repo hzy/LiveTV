@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
                     val url = viewModel.confirmSwitch()
                     if (url != null) {
                         vlcPlayer?.play(url)
+                    } else {
+                        viewModel.showCurrentChannelInfo()
                     }
                     true
                 }
