@@ -148,6 +148,7 @@ fun ChannelInfoOverlay(
 /**
  * Channel list panel - slides in from the left.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChannelListPanel(
     visible: Boolean,
