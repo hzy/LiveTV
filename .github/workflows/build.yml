@@ -69,12 +69,12 @@ jobs:
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "✅ Found APK: $APK_PATH ($APK_SIZE)"
 
-          # Rename with version for release
+          # Rename with version + arch for release
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            RELEASE_APK="app/build/outputs/apk/release/LiveTV-${VERSION}.apk"
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV-${VERSION}-arm64.apk"
           else
-            RELEASE_APK="app/build/outputs/apk/release/LiveTV.apk"
+            RELEASE_APK="app/build/outputs/apk/release/LiveTV-arm64.apk"
           fi
           cp "$APK_PATH" "$RELEASE_APK"
           echo "release_apk=$RELEASE_APK" >> $GITHUB_OUTPUT
