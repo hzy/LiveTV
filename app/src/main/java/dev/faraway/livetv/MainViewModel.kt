@@ -1,10 +1,13 @@
 package dev.faraway.livetv
 
+import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -13,18 +16,33 @@ import kotlinx.coroutines.launch
 /**
  * ViewModel managing TV app state: current/target channel, UI visibility, etc.
  */
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+
+    private companion object {
+        const val PREFS_NAME = "livetv_prefs"
+        const val KEY_LAST_CHANNEL_ID = "last_channel_id"
+        const val KEY_LAST_CATEGORY_INDEX = "last_category_index"
+    }
+
+    private val prefs: SharedPreferences =
+        application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // Channel data
     val channels = ChannelList.channels
     val categories = ChannelList.categories
 
+    // Resolve last-played channel index from prefs (fallback to 0).
+    private val initialChannelIndex: Int = run {
+        val savedId = prefs.getInt(KEY_LAST_CHANNEL_ID, -1)
+        channels.indexOfFirst { it.id == savedId }.takeIf { it >= 0 } ?: 0
+    }
+
     // Current playing channel index
-    var currentChannelIndex by mutableIntStateOf(0)
+    var currentChannelIndex by mutableIntStateOf(initialChannelIndex)
         private set
 
     // Target channel index (while browsing with up/down)
-    var targetChannelIndex by mutableIntStateOf(0)
+    var targetChannelIndex by mutableIntStateOf(initialChannelIndex)
         private set
 
     // Whether the channel-switch overlay is shown
@@ -40,7 +58,9 @@ class MainViewModel : ViewModel() {
         private set
 
     // Active category filter index
-    var activeCategoryIndex by mutableIntStateOf(0)
+    var activeCategoryIndex by mutableIntStateOf(
+        prefs.getInt(KEY_LAST_CATEGORY_INDEX, 0).coerceIn(0, categories.size - 1)
+    )
         private set
 
     // Auto-hide timer job
@@ -88,6 +108,7 @@ class MainViewModel : ViewModel() {
     fun confirmSwitch(): String? {
         if (isChannelInfoVisible && targetChannelIndex != currentChannelIndex) {
             currentChannelIndex = targetChannelIndex
+            persistCurrentChannel()
             // Delay hiding so user can see the switch confirmed
             hideJob?.cancel()
             hideJob = viewModelScope.launch {
@@ -188,6 +209,7 @@ class MainViewModel : ViewModel() {
     fun switchCategory(direction: Int) {
         activeCategoryIndex = (activeCategoryIndex + direction + categories.size) % categories.size
         listFocusIndex = 0
+        prefs.edit().putInt(KEY_LAST_CATEGORY_INDEX, activeCategoryIndex).apply()
     }
 
     /**
@@ -200,6 +222,11 @@ class MainViewModel : ViewModel() {
         currentChannelIndex = realIndex
         targetChannelIndex = realIndex
         isChannelListOpen = false
+        persistCurrentChannel()
         return selected.url
+    }
+
+    private fun persistCurrentChannel() {
+        prefs.edit().putInt(KEY_LAST_CHANNEL_ID, currentChannel.id).apply()
     }
 }
