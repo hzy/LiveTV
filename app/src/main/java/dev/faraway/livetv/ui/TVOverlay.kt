@@ -60,6 +60,9 @@ fun TVOverlay(viewModel: MainViewModel) {
             focusIndex = viewModel.listFocusIndex,
             currentChannelId = viewModel.currentChannel.id
         )
+
+        // Channel scanner (full screen)
+        ScannerOverlay(viewModel = viewModel)
     }
 }
 

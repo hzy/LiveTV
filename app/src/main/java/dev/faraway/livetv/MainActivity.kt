@@ -55,6 +55,26 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (viewModel.isScannerOpen) {
+            return when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    viewModel.scannerCyclePreset(-1); true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    viewModel.scannerCyclePreset(1); true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                    viewModel.scannerActivate(); true
+                }
+                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL -> {
+                    viewModel.clearDiscovered(); true
+                }
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                    viewModel.closeScanner(); true
+                }
+                else -> super.onKeyDown(keyCode, event)
+            }
+        }
         if (viewModel.isChannelListOpen) {
             return when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP -> {
@@ -73,6 +93,9 @@ class MainActivity : ComponentActivity() {
                     val url = viewModel.selectFromList()
                     player?.play(url)
                     true
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    viewModel.openScanner(); true
                 }
                 KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
                     viewModel.closeChannelList(); true
@@ -96,8 +119,11 @@ class MainActivity : ComponentActivity() {
                     }
                     true
                 }
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MENU -> {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
                     viewModel.toggleChannelList(); true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MENU -> {
+                    viewModel.openScanner(); true
                 }
                 KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
                     if (viewModel.isChannelInfoVisible) {

@@ -5,16 +5,26 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.faraway.livetv.scanner.ChannelScanner
+import dev.faraway.livetv.scanner.DiscoveredChannel
+import dev.faraway.livetv.scanner.DiscoveredChannelStore
+import dev.faraway.livetv.scanner.ScanPresets
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /**
- * ViewModel managing TV app state: current/target channel, UI visibility, etc.
+ * ViewModel managing TV app state: current/target channel, UI visibility,
+ * channel scanner. The unified [channels] list combines the bundled
+ * [ChannelList] with channels discovered by [ChannelScanner]; discovered
+ * channels are persisted via [DiscoveredChannelStore] and are assigned ids
+ * starting at [DISCOVERED_ID_BASE] to avoid collisions.
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -22,62 +32,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         const val PREFS_NAME = "livetv_prefs"
         const val KEY_LAST_CHANNEL_ID = "last_channel_id"
         const val KEY_LAST_CATEGORY_INDEX = "last_category_index"
+        const val DISCOVERED_ID_BASE = 100_000
     }
 
     private val prefs: SharedPreferences =
         application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    // Channel data
-    val channels = ChannelList.channels
+    private val discoveredStore = DiscoveredChannelStore(application)
+
     val categories = ChannelList.categories
 
-    // Resolve last-played channel index from prefs (fallback to 0).
+    private val builtinChannels: List<Channel> = ChannelList.channels
+
+    private val discoveredChannels = mutableStateListOf<DiscoveredChannel>().apply {
+        addAll(discoveredStore.load())
+    }
+
+    // Cached union of builtin + discovered, rebuilt only when the discovered
+    // list mutates. Backed by a State so Compose recomposes appropriately.
+    private var combinedChannels by mutableStateOf<List<Channel>>(emptyList())
+
+    val channels: List<Channel> get() = combinedChannels
+
+    init {
+        rebuildCombined()
+    }
+
+    private fun rebuildCombined() {
+        combinedChannels = builtinChannels + discoveredChannels.mapIndexed { i, d ->
+            d.toChannel(
+                id = DISCOVERED_ID_BASE + i,
+                number = "S%02d".format(i + 1),
+            )
+        }
+    }
+
     private val initialChannelIndex: Int = run {
         val savedId = prefs.getInt(KEY_LAST_CHANNEL_ID, -1)
         channels.indexOfFirst { it.id == savedId }.takeIf { it >= 0 } ?: 0
     }
 
-    // Current playing channel index
     var currentChannelIndex by mutableIntStateOf(initialChannelIndex)
         private set
 
-    // Target channel index (while browsing with up/down)
     var targetChannelIndex by mutableIntStateOf(initialChannelIndex)
         private set
 
-    // Whether the channel-switch overlay is shown
     var isChannelInfoVisible by mutableStateOf(false)
         private set
 
-    // Whether the channel list panel is open
     var isChannelListOpen by mutableStateOf(false)
         private set
 
-    // Focused index in channel list
     var listFocusIndex by mutableIntStateOf(0)
         private set
 
-    // Active category filter index
     var activeCategoryIndex by mutableIntStateOf(
         prefs.getInt(KEY_LAST_CATEGORY_INDEX, 0).coerceIn(0, categories.size - 1)
     )
         private set
 
-    // Auto-hide timer job
-    private var hideJob: Job? = null
+    // ============ Scanner state ============
 
-    // Timeout duration for auto-hide (ms)
+    var isScannerOpen by mutableStateOf(false)
+        private set
+
+    var scanInProgress by mutableStateOf(false)
+        private set
+
+    var scannerPresetIndex by mutableIntStateOf(0)
+        private set
+
+    var scanChecked by mutableIntStateOf(0)
+        private set
+
+    var scanTotal by mutableIntStateOf(0)
+        private set
+
+    var scanCurrentTarget by mutableStateOf("")
+        private set
+
+    private val _scanFound = mutableStateListOf<DiscoveredChannel>()
+    val scanFound: List<DiscoveredChannel> get() = _scanFound
+
+    var scanError by mutableStateOf<String?>(null)
+        private set
+
+    private var scanJob: Job? = null
+
+    private var hideJob: Job? = null
     private val autoHideDelayMs = 4000L
 
-    // Current channel
     val currentChannel: Channel
-        get() = channels[currentChannelIndex]
+        get() = channels[currentChannelIndex.coerceIn(0, channels.lastIndex)]
 
-    // Target channel
     val targetChannel: Channel
-        get() = channels[targetChannelIndex]
+        get() = channels[targetChannelIndex.coerceIn(0, channels.lastIndex)]
 
-    // Filtered channels based on active category
     val filteredChannels: List<Channel>
         get() {
             if (activeCategoryIndex == 0) return channels
@@ -85,31 +136,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return channels.filter { it.category == cat }
         }
 
-    /**
-     * Navigate to next channel (Down key).
-     */
     fun channelDown() {
         targetChannelIndex = (targetChannelIndex + 1) % channels.size
         showChannelInfo()
     }
 
-    /**
-     * Navigate to previous channel (Up key).
-     */
     fun channelUp() {
         targetChannelIndex = (targetChannelIndex - 1 + channels.size) % channels.size
         showChannelInfo()
     }
 
-    /**
-     * Confirm channel switch (OK/Enter key).
-     * Returns the new channel URL if actually switching, null otherwise.
-     */
     fun confirmSwitch(): String? {
         if (isChannelInfoVisible && targetChannelIndex != currentChannelIndex) {
             currentChannelIndex = targetChannelIndex
             persistCurrentChannel()
-            // Delay hiding so user can see the switch confirmed
             hideJob?.cancel()
             hideJob = viewModelScope.launch {
                 delay(800)
@@ -120,42 +160,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return null
     }
 
-    /**
-     * Cancel channel browsing (Back key).
-     */
     fun cancelSwitch() {
         targetChannelIndex = currentChannelIndex
         hideChannelInfo()
     }
 
-    /**
-     * Show current channel info (when pressing OK with no pending switch).
-     */
     fun showCurrentChannelInfo() {
-        if (!isChannelInfoVisible) {
-            showChannelInfo()
-        }
+        if (!isChannelInfoVisible) showChannelInfo()
     }
 
-    /**
-     * Show channel info overlay and start auto-hide timer.
-     */
     private fun showChannelInfo() {
         isChannelInfoVisible = true
         restartHideTimer()
     }
 
-    /**
-     * Hide channel info overlay.
-     */
     private fun hideChannelInfo() {
         isChannelInfoVisible = false
         hideJob?.cancel()
     }
 
-    /**
-     * Restart the auto-hide timer.
-     */
     private fun restartHideTimer() {
         hideJob?.cancel()
         hideJob = viewModelScope.launch {
@@ -167,55 +190,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ============ Channel List Panel ============
 
-    /**
-     * Toggle the channel list panel.
-     */
     fun toggleChannelList() {
         isChannelListOpen = !isChannelListOpen
         if (isChannelListOpen) {
-            // Focus current channel in list
             val filtered = filteredChannels
             listFocusIndex = filtered.indexOfFirst { it.id == currentChannel.id }
                 .coerceAtLeast(0)
-            // Hide channel info when list opens
             hideChannelInfo()
         }
     }
 
-    /**
-     * Close the channel list panel.
-     */
     fun closeChannelList() {
         isChannelListOpen = false
     }
 
-    /**
-     * Move focus up in channel list.
-     */
     fun listUp() {
         listFocusIndex = (listFocusIndex - 1).coerceAtLeast(0)
     }
 
-    /**
-     * Move focus down in channel list.
-     */
     fun listDown() {
         listFocusIndex = (listFocusIndex + 1).coerceAtMost(filteredChannels.size - 1)
     }
 
-    /**
-     * Switch category (Left/Right in list mode).
-     */
     fun switchCategory(direction: Int) {
         activeCategoryIndex = (activeCategoryIndex + direction + categories.size) % categories.size
         listFocusIndex = 0
         prefs.edit().putInt(KEY_LAST_CATEGORY_INDEX, activeCategoryIndex).apply()
     }
 
-    /**
-     * Select channel from list.
-     * Returns the channel URL to play.
-     */
     fun selectFromList(): String {
         val selected = filteredChannels[listFocusIndex]
         val realIndex = channels.indexOfFirst { it.id == selected.id }
@@ -228,5 +230,122 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun persistCurrentChannel() {
         prefs.edit().putInt(KEY_LAST_CHANNEL_ID, currentChannel.id).apply()
+    }
+
+    // ============ Scanner ============
+
+    fun openScanner() {
+        // Closing the channel list first keeps the UI predictable.
+        isChannelListOpen = false
+        hideChannelInfo()
+        isScannerOpen = true
+    }
+
+    fun closeScanner() {
+        if (scanInProgress) cancelScan()
+        isScannerOpen = false
+    }
+
+    fun startScan(preset: ScanPresets.Preset) {
+        if (scanInProgress) return
+        scanError = null
+        _scanFound.clear()
+        scanChecked = 0
+        scanTotal = 0
+        scanCurrentTarget = ""
+        scanInProgress = true
+
+        val scanner = ChannelScanner(ports = preset.ports())
+        scanJob = viewModelScope.launch {
+            try {
+                scanner.scan().collect { event ->
+                    when (event) {
+                        is ChannelScanner.ScanEvent.Progress -> {
+                            scanChecked = event.checked
+                            scanTotal = event.total
+                            scanCurrentTarget = event.current
+                        }
+                        is ChannelScanner.ScanEvent.Found -> {
+                            _scanFound += event.channel
+                        }
+                        is ChannelScanner.ScanEvent.Error -> {
+                            scanError = event.message
+                        }
+                        is ChannelScanner.ScanEvent.Done -> {
+                            commitScanResults(event.channels)
+                        }
+                    }
+                }
+            } finally {
+                scanInProgress = false
+            }
+        }
+    }
+
+    fun cancelScan() {
+        scanJob?.cancel()
+        scanJob = null
+        scanInProgress = false
+    }
+
+    /** Cycles the highlighted preset in the scanner UI. No-op while scanning. */
+    fun scannerCyclePreset(direction: Int) {
+        if (scanInProgress) return
+        val n = ScanPresets.Preset.values().size
+        scannerPresetIndex = (scannerPresetIndex + direction + n) % n
+    }
+
+    /** OK key from the scanner UI: starts a scan or cancels the running one. */
+    fun scannerActivate() {
+        if (scanInProgress) {
+            cancelScan()
+        } else {
+            startScan(ScanPresets.Preset.values()[scannerPresetIndex])
+        }
+    }
+
+    fun clearDiscovered() {
+        if (scanInProgress) return
+        discoveredChannels.clear()
+        discoveredStore.clear()
+        rebuildCombined()
+        rebindIndicesAfterMutation()
+    }
+
+    /**
+     * Merges [results] into the persistent discovered list, deduping by url.
+     * Existing entries keep their position so user-visible numbers (`S01`,
+     * `S02`, ...) don't shuffle on every scan.
+     */
+    private fun commitScanResults(results: List<DiscoveredChannel>) {
+        val byUrl = discoveredChannels.associateBy { it.url }.toMutableMap()
+        for (r in results) byUrl[r.url] = r
+        val merged = byUrl.values
+            .sortedWith(compareBy({ ipToKey(it.ip) }, { it.port }))
+        discoveredChannels.clear()
+        discoveredChannels.addAll(merged)
+        discoveredStore.save(merged)
+        rebuildCombined()
+        rebindIndicesAfterMutation()
+    }
+
+    private fun rebindIndicesAfterMutation() {
+        // After mutating the channel list, current/target indices may be
+        // pointing at stale slots. Re-resolve against the saved channel id.
+        val savedId = prefs.getInt(KEY_LAST_CHANNEL_ID, -1)
+        val newIdx = channels.indexOfFirst { it.id == savedId }.takeIf { it >= 0 } ?: 0
+        currentChannelIndex = newIdx
+        targetChannelIndex = newIdx
+    }
+
+    private fun ipToKey(ip: String): Long {
+        val parts = ip.split(".")
+        if (parts.size != 4) return 0L
+        var v = 0L
+        for (p in parts) {
+            val n = p.toIntOrNull() ?: return 0L
+            v = (v shl 8) or n.toLong()
+        }
+        return v
     }
 }

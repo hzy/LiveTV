@@ -17,7 +17,7 @@ data class Channel(
  * Source: https://github.com/qwerttvv/Beijing-IPTV
  */
 object ChannelList {
-    val categories = listOf("全部", "央视", "北京", "卫视", "电影", "剧场", "体育", "少儿", "其他")
+    val categories = listOf("全部", "央视", "北京", "卫视", "电影", "剧场", "体育", "少儿", "其他", "扫描")
 
     val channels = listOf(
         // ========== 北京台 ==========
